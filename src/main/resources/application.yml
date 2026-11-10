@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: ledger-api
+  jackson:
+    deserialization:
+      fail-on-reading-dup-tree-key: true
+      fail-on-trailing-tokens: true
+  datasource:
+    url: ${LEDGER_DB_URL:jdbc:mysql://localhost:3306/ledger}
+    username: ${LEDGER_DB_USER:ledger}
+    password: ${LEDGER_DB_PASSWORD:ledger-local}
+  rabbitmq:
+    host: ${LEDGER_RABBIT_HOST:localhost}
+    username: ${LEDGER_RABBIT_USER:ledger}
+    password: ${LEDGER_RABBIT_PASSWORD:ledger-local}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-components: always

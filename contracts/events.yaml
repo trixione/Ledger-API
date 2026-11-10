@@ -1,0 +1,50 @@
+# JSON Schema contracts for RabbitMQ payloads. Broker wiring is planned for Tasks 6 and 7.
+$schema: https://json-schema.org/draft/2020-12/schema
+oneOf:
+  - $ref: '#/$defs/PaymentSettled'
+  - $ref: '#/$defs/TransactionRecorded'
+$defs:
+  Currency: {type: string, enum: [EUR, USD, JPY]}
+  Amount:
+    type: string
+    pattern: '^[0-9]+(?:\.[0-9]+)?$'
+    description: Strictly positive, with EUR/USD scale at most 2 and JPY scale 0. Minor units fit in a signed 64-bit integer.
+  EventIdentifier: {type: string, minLength: 1, maxLength: 128, pattern: '^[!-~]+$'}
+  Uuid: {type: string, format: uuid}
+  PaymentSettled:
+    title: payment.settled.v1
+    type: object
+    additionalProperties: false
+    required: [eventId, paymentId, merchantAccountId, amount, currency]
+    properties:
+      eventId: {$ref: '#/$defs/EventIdentifier'}
+      paymentId: {$ref: '#/$defs/EventIdentifier'}
+      merchantAccountId: {$ref: '#/$defs/Uuid'}
+      amount: {$ref: '#/$defs/Amount'}
+      currency: {$ref: '#/$defs/Currency'}
+    examples:
+      - {eventId: event-001, paymentId: payment-001, merchantAccountId: '73c355c2-77bf-4b3d-ac14-2aeddd0a080d', amount: '125.50', currency: EUR}
+  TransactionRecorded:
+    title: transaction.recorded.v1
+    type: object
+    additionalProperties: false
+    required: [eventId, transactionId, currency, description, recordedAt, entries]
+    properties:
+      eventId:
+        $ref: '#/$defs/Uuid'
+        description: Stable across redelivery and equal to transactionId.
+      transactionId: {$ref: '#/$defs/Uuid'}
+      currency: {$ref: '#/$defs/Currency'}
+      description: {type: string, maxLength: 255}
+      recordedAt: {type: string, format: date-time}
+      reversesId: {$ref: '#/$defs/Uuid'}
+      entries:
+        type: array
+        minItems: 2
+        items:
+          type: object
+          required: [accountId, direction, amount]
+          properties:
+            accountId: {$ref: '#/$defs/Uuid'}
+            direction: {type: string, enum: [DEBIT, CREDIT]}
+            amount: {$ref: '#/$defs/Amount'}

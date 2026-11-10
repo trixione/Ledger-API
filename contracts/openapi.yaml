@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: Ledger API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /v1/accounts:
+    post:
+      operationId: openAccount
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [currency]
+              properties:
+                currency:
+                  $ref: '#/components/schemas/Currency'
+                overdraftLimit:
+                  $ref: '#/components/schemas/NonnegativeAmount'
+            example: {currency: EUR, overdraftLimit: '25.00'}
+      responses:
+        '201':
+          description: Account created or original creation response replayed.
+          headers:
+            Location:
+              schema: {type: string, format: uri-reference}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Account'}
+              example: {id: '73c355c2-77bf-4b3d-ac14-2aeddd0a080d', currency: EUR, overdraftLimit: '25.00', balance: '0.00'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '415':
+          description: Account creation requires application/json.
+  /v1/accounts/{accountId}:
+    parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getAccount
+      responses:
+        '200':
+          description: Account with its current balance.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Account'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /v1/transactions:
+    post:
+      operationId: recordTransaction
+      description: Planned for Task 4. Posts balanced entries in one currency and applies overdraft limits atomically.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NewTransaction'}
+      responses:
+        '201': {$ref: '#/components/responses/TransactionCreated'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /v1/transactions/{transactionId}:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    get:
+      operationId: getTransaction
+      description: Planned for Task 4.
+      responses:
+        '200':
+          description: Recorded transaction.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Transaction'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /v1/transactions/{transactionId}/reversals:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    post:
+      operationId: reverseTransaction
+      description: Planned for Task 5. Flips entries and links the new transaction to the original. Reversals cannot themselves be reversed.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201': {$ref: '#/components/responses/TransactionCreated'}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Case-sensitive key unique per operation. Reuse with the same effective request to replay the original success. Reuse with a different valid request returns 409.
+      schema: {type: string, pattern: '^[A-Za-z0-9._~-]{1,128}$'}
+    TransactionId:
+      name: transactionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    Currency:
+      type: string
+      enum: [EUR, USD, JPY]
+    NonnegativeAmount:
+      type: string
+      maxLength: 32
+      pattern: '^[0-9]+(?:\.[0-9]+)?$'
+      description: Exact decimal with at most two fractional digits for EUR or USD and zero for JPY. Minor units must fit in a signed 64-bit integer.
+    Account:
+      type: object
+      required: [id, currency, overdraftLimit, balance]
+      properties:
+        id: {type: string, format: uuid}
+        currency: {$ref: '#/components/schemas/Currency'}
+        overdraftLimit:
+          description: Null denotes an unlimited settlement account.
+          anyOf:
+            - $ref: '#/components/schemas/NonnegativeAmount'
+            - type: 'null'
+        balance: {type: string, pattern: '^-?[0-9]+(?:\.[0-9]+)?$'}
+    Entry:
+      type: object
+      required: [accountId, direction, amount]
+      properties:
+        accountId: {type: string, format: uuid}
+        direction: {type: string, enum: [DEBIT, CREDIT]}
+        amount:
+          $ref: '#/components/schemas/NonnegativeAmount'
+          description: Must be strictly positive and match the account currency precision.
+    NewTransaction:
+      type: object
+      required: [description, entries]
+      properties:
+        description: {type: string, maxLength: 255}
+        entries:
+          type: array
+          minItems: 2
+          items: {$ref: '#/components/schemas/Entry'}
+    Transaction:
+      allOf:
+        - $ref: '#/components/schemas/NewTransaction'
+        - type: object
+          required: [id, currency, recordedAt]
+          properties:
+            id: {type: string, format: uuid}
+            currency: {$ref: '#/components/schemas/Currency'}
+            recordedAt: {type: string, format: date-time}
+            reversesId: {type: string, format: uuid}
+    Problem:
+      type: object
+      required: [status, detail, code, field]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        code: {type: string}
+        field: {type: string}
+  responses:
+    Invalid:
+      description: Invalid request or ledger rule violation.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {status: 400, detail: Too many decimal places., code: invalid_precision, field: overdraftLimit}
+    Conflict:
+      description: Idempotency key reused for a different request or reversal already recorded.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {status: 409, detail: This key was used with different account details., code: idempotency_conflict, field: Idempotency-Key}
+    NotFound:
+      description: Resource does not exist.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    TransactionCreated:
+      description: Transaction recorded or original creation response replayed.
+      headers:
+        Location:
+          schema: {type: string, format: uri-reference}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Transaction'}
+
