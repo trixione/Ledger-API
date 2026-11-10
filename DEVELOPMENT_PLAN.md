@@ -7,8 +7,10 @@ Work through the tasks in order. Each row is one commit. Run its completion chec
 - **Task 1 implemented.** Maven Wrapper build and Spring startup smoke test passed. Full Compose startup and RabbitMQ health still need a Docker run.
 - **Task 2 implemented.** The [REST contract](contracts/openapi.yaml) documents the account, transaction, and reversal endpoints. The [event schemas](contracts/events.yaml) define the incoming payment and outgoing transaction payloads.
 - **Task 3 implemented and tested.** HTTP integration tests against MySQL 8.4 cover account reads, currency validation, settlement seeding, and concurrent retries across two application instances.
-- **Tasks 4–6 implemented.** The API posts, reads, and reverses transactions. The RabbitMQ listener processes settled payments, and the sample sender publishes to the local broker. Broker-level acknowledgement and dead-letter delivery still need a Compose run.
-- **Tasks 7–9 are planned.** Task 7 is next. Postings already persist outbox rows.
+- **Tasks 4–6 implemented.** The API posts, reads, and reverses transactions. The RabbitMQ listener processes settled payments, and the sample sender publishes to the local broker.
+- **Task 7 implemented.** The outbox publisher retries pending rows and marks them sent after broker confirmation and routing.
+- **Task 8 implemented.** The integration suite covers cross-instance posting and replay against MySQL plus RabbitMQ redelivery, dead-letter routing, and outbox recovery.
+- **Task 9 implemented locally.** Run `sh scripts/verify.sh` to verify a clean checkout with Docker Compose. Publish the verified commit to complete the handoff.
 
 ## Package structure
 

@@ -3,6 +3,19 @@ services:
     build: .
     ports:
       - "127.0.0.1:8080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -ec
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080;
+          printf 'GET /actuator/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3;
+          read -r status <&3;
+          [[ "$$status" == *" 200 "* ]]
+      interval: 5s
+      timeout: 4s
+      retries: 30
     environment:
       LEDGER_DB_URL: jdbc:mysql://mysql:3306/ledger
       LEDGER_RABBIT_HOST: rabbitmq
@@ -19,9 +32,13 @@ services:
     command: ["mvn", "-B", "-Dtest=*IntegrationTest", "test"]
     environment:
       LEDGER_MYSQL_TEST: 'true'
+      LEDGER_BROKER_TEST: 'true'
       LEDGER_DB_URL: jdbc:mysql://mysql:3306/ledger
+      LEDGER_RABBIT_HOST: rabbitmq
     depends_on:
       mysql:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
   mysql:
     image: mysql:8.4
@@ -39,11 +56,14 @@ services:
       retries: 30
   rabbitmq:
     image: rabbitmq:4.2-management
+    hostname: rabbitmq
     ports:
       - "127.0.0.1:15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ledger
       RABBITMQ_DEFAULT_PASS: ledger-local
+    volumes:
+      - ledger-rabbit:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
@@ -51,3 +71,4 @@ services:
       retries: 30
 volumes:
   ledger-db:
+  ledger-rabbit:

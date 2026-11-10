@@ -10,6 +10,11 @@ spring:
     username: ${LEDGER_DB_USER:ledger}
     password: ${LEDGER_DB_PASSWORD:ledger-local}
   rabbitmq:
+    connection-timeout: 5s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
     host: ${LEDGER_RABBIT_HOST:localhost}
     username: ${LEDGER_RABBIT_USER:ledger}
     password: ${LEDGER_RABBIT_PASSWORD:ledger-local}

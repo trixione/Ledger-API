@@ -99,6 +99,7 @@ public class TransactionService {
     private LedgerTransaction once(String operation, String key, String request, Supplier<LedgerTransaction> write) {
         byte[] keyBytes = key.getBytes(StandardCharsets.US_ASCII);
         byte[] fingerprint = RequestFingerprint.sha256(request);
+        // The claim and the ledger write share a transaction so failures release the key.
         var claim = idempotency.lock(operation, keyBytes, fingerprint);
         if (!java.security.MessageDigest.isEqual(claim.fingerprint(), fingerprint)) {
             throw new LedgerException(HttpStatus.CONFLICT, "idempotency_conflict", "Idempotency-Key",
@@ -145,6 +146,7 @@ public class TransactionService {
             throw LedgerException.invalid("entries", "unbalanced_transaction", "Debits and credits must balance.");
         }
 
+        // Apply overdraft rules to the final balance after combining all entries for an account.
         var balances = new LinkedHashMap<UUID, Long>();
         locked.forEach((id, row) -> {
             String field = "entries[" + firstIndexes.get(id) + "].accountId";

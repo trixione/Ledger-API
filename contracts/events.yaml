@@ -1,4 +1,4 @@
-# JSON Schema contracts for RabbitMQ payloads. Outbox delivery is planned for Task 7.
+# JSON Schema contracts for RabbitMQ payment and transaction payloads.
 $schema: https://json-schema.org/draft/2020-12/schema
 oneOf:
   - $ref: '#/$defs/PaymentSettled'

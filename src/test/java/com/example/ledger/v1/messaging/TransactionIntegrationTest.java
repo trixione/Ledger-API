@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @EnabledIfEnvironmentVariable(named = "LEDGER_MYSQL_TEST", matches = "true")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "spring.rabbitmq.listener.simple.auto-startup=false")
+        properties = {"spring.rabbitmq.listener.simple.auto-startup=false", "ledger.outbox.enabled=false"})
 class TransactionIntegrationTest {
     private static final String SETTLEMENT = "00000000-0000-0000-0000-000000000001";
 

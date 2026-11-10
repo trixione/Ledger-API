@@ -1,6 +1,6 @@
 # Ledger API
 
-The service opens accounts, reads balances, records and reverses transactions, and consumes settled payments. See the [architecture diagram](ledger-architecture.svg), [REST contract](contracts/openapi.yaml), and [event schemas](contracts/events.yaml). Each posting writes an outbox event. Outbox delivery is planned for Task 7.
+The service opens accounts, reads balances, records and reverses transactions, consumes settled payments, and publishes recorded transaction events. See the [architecture diagram](architecture/ledger-architecture.svg), [REST contract](contracts/openapi.yaml), and [event schemas](contracts/events.yaml).
 
 ## Run locally
 
@@ -16,6 +16,10 @@ Once the API has started, expect the overall status and both the `db` and `rabbi
 
 See the [development plan](DEVELOPMENT_PLAN.md) for the task and commit sequence.
 
+The [challenge test guide](docs/Ledger%20API%20Challenge%20Test%20Guide.docx) contains copy-ready requests, expected results, and the submission checklist.
+
+The [architecture diagrams](architecture/README.md) trace the REST endpoints, RabbitMQ flows, and MySQL table access.
+
 ## Design decisions
 
 The Java code for API version 1 lives under `com.example.ledger.v1`. Controllers handle HTTP requests. Services own business rules and transaction boundaries, repositories own JDBC queries, and models describe accounts, currencies, and transactions. MySQL arbitrates idempotency claims across service instances.
@@ -28,7 +32,7 @@ The `v1.advice` package maps exceptions to REST problem responses. Shared except
 - Store amounts as integer minor units and validate input scale before conversion. Aggregate each account's signed entries before checking its resulting balance. The per-currency balance starts at zero and each committed transaction has equal debit and credit totals in a single currency.
 - Lock affected accounts in ascending ID order before reading balances for writes. A reversal appends flipped entries, uses a unique constraint on the original transaction ID, and rejects originals that are themselves reversals. It applies the ordinary overdraft checks.
 - Scope API idempotency keys to the operation. Clients share the key space until authentication is added, so generate a UUID per logical request. Account creation stores the normalized request fingerprint and account ID in the same transaction as the account. A matching retry reconstructs the original response with its zero opening balance, and a different valid request using the same key returns HTTP 409. Deduplicate settlement writes by payment ID so a different event ID cannot post the payment again.
-- The ledger write, balance updates, deduplication record and outbox record commit in one MySQL transaction. Task 7 will add a publisher that retries pending records after a crash and marks them sent after broker confirmation. Consumers should deduplicate by transaction ID. Delivery will have no global ordering guarantee.
+- The ledger write, balance updates, deduplication record and outbox record commit in one MySQL transaction. Publishers claim pending rows with `FOR UPDATE SKIP LOCKED` so multiple instances can drain the outbox.
 
 ## Accounts
 
@@ -74,24 +78,34 @@ $sent = .\scripts\send-payment.ps1 -MerchantAccountId $account.id
 
 The sender publishes to the `ledger.payments` exchange with routing key `payment.settled.v1`. The script reports whether RabbitMQ routed the message. Read the merchant account to confirm processing. Invalid payloads can be inspected in `ledger.payment-settled.v1.dead` through the local RabbitMQ management UI on port 15672.
 
+## Transaction announcements
+
+Every committed posting, including reversals and settled payments, creates an outbox event. The publisher sends persistent JSON messages to the topic exchange `ledger.transactions` with routing key `transaction.recorded.v1`. The durable queue `ledger.transaction-recorded.v1` is bound by default. Each independent subscriber should bind its own durable queue before processing traffic.
+
+Delivery to the broker is at least once while MySQL and RabbitMQ recover with their durable data intact. A row is marked published only after a broker acknowledgement and successful routing. A crash after the ledger commit leaves a pending row for another publisher to pick up. A crash after broker confirmation but before the database update commits can produce a duplicate. Deduplicate by the stable `eventId`, which equals the transaction ID. Multiple publishers and retries can change delivery order. A subscriber that binds a queue later does not receive messages published before the binding.
+
 ## Verify
 
-Run the Maven smoke test with a local JDK 17.
+With Docker Compose, Git, and a JDK 17 available, run this from the project root. On Windows, use Git Bash.
+
+```sh
+sh scripts/verify.sh
+```
+
+Run the script against the local development stack. It builds both images, stops any running API container so the recovery test controls publishing, starts MySQL and RabbitMQ, and writes test records to the local database. After the tests pass, it starts the API and waits for its health check. Stop the stack with `docker compose down`.
+
+For a quick Maven smoke test with a local JDK 17:
 
 ```powershell
 .\mvnw.cmd verify
 ```
 
-Run the integration tests against MySQL in Compose. They exercise account retries, posting and reversal, rollback on refusal, and payment deduplication by invoking the listener directly. Broker-level delivery and dead-lettering are checked separately.
-
-```powershell
-docker compose --profile test run --build --rm account-tests
-```
+The integration suite exercises concurrent writes across two service instances, replay, rollback on refusal, per-currency integrity, live RabbitMQ dead-letter routing, and outbox recovery with a restarted publisher.
 
 ## AI usage
 
-Codex helped scaffold the service, draft the contracts and migration, and implement and review the account endpoints. Verification includes the Maven build, Spring startup smoke test, and HTTP integration tests against MySQL 8.4.
+Codex helped scaffold the service, draft the contracts and migration, implement the ledger and messaging flows, and write the integration tests. Verification uses the Maven build, a Spring startup smoke test, and integration tests against MySQL and RabbitMQ.
 
 ## Improvements
 
-Before production, authenticate callers and scope idempotency keys to the authenticated client. Outbox publishing and full broker integration coverage are scheduled for later tasks.
+Before production, authenticate callers and scope idempotency keys to the authenticated client. Add outbox backlog metrics and a retention policy for published rows. Configure broker queue replication and monitor dead-letter queues. Paginated account entries, historical balances, and end-to-end correlation were deferred to focus on the core ledger guarantees.
