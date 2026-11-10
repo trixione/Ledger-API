@@ -1,4 +1,4 @@
-# JSON Schema contracts for RabbitMQ payloads. Broker wiring is planned for Tasks 6 and 7.
+# JSON Schema contracts for RabbitMQ payloads. Outbox delivery is planned for Task 7.
 $schema: https://json-schema.org/draft/2020-12/schema
 oneOf:
   - $ref: '#/$defs/PaymentSettled'

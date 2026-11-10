@@ -1,6 +1,6 @@
 # Ledger API
 
-The service opens accounts and reads their current balances. See the [architecture diagram](ledger-architecture.svg), [REST contract](contracts/openapi.yaml), and [event schemas](contracts/events.yaml) for the full design. Transaction posting, reversals, and message processing are planned for later tasks.
+The service opens accounts, reads balances, records and reverses transactions, and consumes settled payments. See the [architecture diagram](ledger-architecture.svg), [REST contract](contracts/openapi.yaml), and [event schemas](contracts/events.yaml). Each posting writes an outbox event. Outbox delivery is planned for Task 7.
 
 ## Run locally
 
@@ -18,15 +18,17 @@ See the [development plan](DEVELOPMENT_PLAN.md) for the task and commit sequence
 
 ## Design decisions
 
-The Java code for API version 1 lives under `com.example.ledger.v1`. The controller validates HTTP requests and returns field-level problem details. The service owns business rules and transaction boundaries. The repository owns JDBC queries, and model types describe accounts, currencies and errors. MySQL arbitrates idempotency claims across service instances.
+The Java code for API version 1 lives under `com.example.ledger.v1`. Controllers handle HTTP requests. Services own business rules and transaction boundaries, repositories own JDBC queries, and models describe accounts, currencies, and transactions. MySQL arbitrates idempotency claims across service instances.
 
 Account creation accepts a single JSON object with unique, known fields. For retries, an omitted overdraft and an explicit zero are equivalent. Decimal strings with the same minor-unit value are also equivalent.
 
-- The planned messaging layer will use RabbitMQ for incoming payment-settled and outgoing transaction-recorded messages. It will acknowledge valid payments after commit, retry transient failures, and route permanent failures to a dead-letter queue.
+The `v1.advice` package maps exceptions to REST problem responses. Shared exceptions live in `v1.exception`, and request validation and fingerprint helpers live in `v1.util`.
+
+- The RabbitMQ listener acknowledges valid payments after commit, requeues processing failures, and routes invalid payments to a dead-letter queue.
 - Store amounts as integer minor units and validate input scale before conversion. Aggregate each account's signed entries before checking its resulting balance. The per-currency balance starts at zero and each committed transaction has equal debit and credit totals in a single currency.
 - Lock affected accounts in ascending ID order before reading balances for writes. A reversal appends flipped entries, uses a unique constraint on the original transaction ID, and rejects originals that are themselves reversals. It applies the ordinary overdraft checks.
 - Scope API idempotency keys to the operation. Clients share the key space until authentication is added, so generate a UUID per logical request. Account creation stores the normalized request fingerprint and account ID in the same transaction as the account. A matching retry reconstructs the original response with its zero opening balance, and a different valid request using the same key returns HTTP 409. Deduplicate settlement writes by payment ID so a different event ID cannot post the payment again.
-- Commit the ledger write, balance updates, deduplication record and outbox record in one MySQL transaction. A publisher retries pending records after a crash and marks them sent after broker confirmation. Consumers may see duplicates and should deduplicate by transaction ID. Delivery has no global ordering guarantee.
+- The ledger write, balance updates, deduplication record and outbox record commit in one MySQL transaction. Task 7 will add a publisher that retries pending records after a crash and marks them sent after broker confirmation. Consumers should deduplicate by transaction ID. Delivery will have no global ordering guarantee.
 
 ## Accounts
 
@@ -42,6 +44,36 @@ Repeat the POST with the same key and body to receive the same HTTP 201, Locatio
 
 Flyway applies the MySQL migrations at startup and seeds the EUR, USD, and JPY settlement accounts.
 
+## Transactions and reversals
+
+After creating an EUR account as above, post a balanced transaction and reverse it:
+
+```powershell
+$entries = @(
+  @{accountId='00000000-0000-0000-0000-000000000001'; direction='DEBIT'; amount='125.50'}
+  @{accountId=$account.id; direction='CREDIT'; amount='125.50'}
+)
+$transaction = Invoke-RestMethod http://localhost:8080/v1/transactions -Method Post `
+  -Headers @{'Idempotency-Key' = [guid]::NewGuid().ToString()} -ContentType application/json `
+  -Body (@{description='Example posting'; entries=$entries} | ConvertTo-Json -Depth 4)
+Invoke-RestMethod "http://localhost:8080/v1/transactions/$($transaction.id)"
+Invoke-RestMethod "http://localhost:8080/v1/transactions/$($transaction.id)/reversals" -Method Post `
+  -Headers @{'Idempotency-Key' = [guid]::NewGuid().ToString()}
+```
+
+When retrying, reuse the original key. For direct postings, preserve the description, entry order, and amount strings. For a reversal, reuse the same original transaction ID. Reusing a key for a different request returns HTTP 409.
+
+## Settled payments
+
+With the Compose stack running, send a sample payment for the EUR account and then resend it with the same payment ID. Each invocation generates a fresh event ID.
+
+```powershell
+$sent = .\scripts\send-payment.ps1 -MerchantAccountId $account.id
+.\scripts\send-payment.ps1 -MerchantAccountId $account.id -PaymentId $sent.PaymentId
+```
+
+The sender publishes to the `ledger.payments` exchange with routing key `payment.settled.v1`. The script reports whether RabbitMQ routed the message. Read the merchant account to confirm processing. Invalid payloads can be inspected in `ledger.payment-settled.v1.dead` through the local RabbitMQ management UI on port 15672.
+
 ## Verify
 
 Run the Maven smoke test with a local JDK 17.
@@ -50,7 +82,7 @@ Run the Maven smoke test with a local JDK 17.
 .\mvnw.cmd verify
 ```
 
-Run the HTTP account tests against MySQL in Compose. They exercise concurrent retries, conflicting key reuse, account reads, currency precision, and settlement seeding.
+Run the integration tests against MySQL in Compose. They exercise account retries, posting and reversal, rollback on refusal, and payment deduplication by invoking the listener directly. Broker-level delivery and dead-lettering are checked separately.
 
 ```powershell
 docker compose --profile test run --build --rm account-tests
@@ -62,4 +94,4 @@ Codex helped scaffold the service, draft the contracts and migration, and implem
 
 ## Improvements
 
-Before production, authenticate callers and scope idempotency keys to the authenticated client. Transaction posting, reversals, and RabbitMQ processing are scheduled for their own implementation tasks.
+Before production, authenticate callers and scope idempotency keys to the authenticated client. Outbox publishing and full broker integration coverage are scheduled for later tasks.

@@ -3,6 +3,8 @@ package com.example.ledger.v1.model;
 import java.math.BigDecimal;
 import java.util.Currency;
 
+import com.example.ledger.v1.exception.LedgerException;
+
 public enum LedgerCurrency {
     EUR(2), USD(2), JPY(0);
 
@@ -14,17 +16,17 @@ public enum LedgerCurrency {
 
     public static LedgerCurrency parse(String code) {
         if (code == null || !code.matches("[A-Z]{3}")) {
-            throw AccountError.invalid("currency", "invalid_currency", "Use a three-letter ISO 4217 code.");
+            throw LedgerException.invalid("currency", "invalid_currency", "Use a three-letter ISO 4217 code.");
         }
         try {
             Currency.getInstance(code);
         } catch (IllegalArgumentException exception) {
-            throw AccountError.invalid("currency", "invalid_currency", "Unknown ISO 4217 currency.");
+            throw LedgerException.invalid("currency", "invalid_currency", "Unknown ISO 4217 currency.");
         }
         try {
             return valueOf(code);
         } catch (IllegalArgumentException exception) {
-            throw AccountError.invalid("currency", "unsupported_currency", "Use EUR, USD or JPY.");
+            throw LedgerException.invalid("currency", "unsupported_currency", "Use EUR, USD or JPY.");
         }
     }
 
@@ -32,17 +34,32 @@ public enum LedgerCurrency {
         if (value == null) {
             return 0;
         }
+        return minorUnits(value, "overdraftLimit");
+    }
+
+    public long positiveMinor(String value, String field) {
+        if (value == null) {
+            throw LedgerException.invalid(field, "invalid_amount", "Provide a positive decimal string.");
+        }
+        long minor = minorUnits(value, field);
+        if (minor == 0) {
+            throw LedgerException.invalid(field, "invalid_amount", "Amount must be positive.");
+        }
+        return minor;
+    }
+
+    private long minorUnits(String value, String field) {
         if (!value.matches("[0-9]+(?:\\.[0-9]+)?") || value.length() > 32) {
-            throw AccountError.invalid("overdraftLimit", "invalid_amount", "Use a nonnegative decimal string.");
+            throw LedgerException.invalid(field, "invalid_amount", "Use a nonnegative decimal string.");
         }
         BigDecimal amount = new BigDecimal(value);
         if (amount.scale() > scale) {
-            throw AccountError.invalid("overdraftLimit", "invalid_precision", "Too many decimal places.");
+            throw LedgerException.invalid(field, "invalid_precision", "Too many decimal places.");
         }
         try {
             return amount.movePointRight(scale).longValueExact();
         } catch (ArithmeticException exception) {
-            throw AccountError.invalid("overdraftLimit", "amount_out_of_range", "Amount exceeds the supported range.");
+            throw LedgerException.invalid(field, "amount_out_of_range", "Amount exceeds the supported range.");
         }
     }
 

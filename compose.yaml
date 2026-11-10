@@ -16,7 +16,7 @@ services:
     build:
       context: .
       target: build
-    command: ["mvn", "-B", "-Dtest=AccountIntegrationTest", "test"]
+    command: ["mvn", "-B", "-Dtest=*IntegrationTest", "test"]
     environment:
       LEDGER_MYSQL_TEST: 'true'
       LEDGER_DB_URL: jdbc:mysql://mysql:3306/ledger
@@ -38,7 +38,9 @@ services:
       timeout: 5s
       retries: 30
   rabbitmq:
-    image: rabbitmq:4.2
+    image: rabbitmq:4.2-management
+    ports:
+      - "127.0.0.1:15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ledger
       RABBITMQ_DEFAULT_PASS: ledger-local

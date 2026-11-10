@@ -57,7 +57,7 @@ paths:
   /v1/transactions:
     post:
       operationId: recordTransaction
-      description: Planned for Task 4. Posts balanced entries in one currency and applies overdraft limits atomically.
+      description: Posts balanced entries in one currency and applies overdraft limits atomically.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -74,7 +74,7 @@ paths:
       - $ref: '#/components/parameters/TransactionId'
     get:
       operationId: getTransaction
-      description: Planned for Task 4.
+      description: Reads an immutable recorded transaction.
       responses:
         '200':
           description: Recorded transaction.
@@ -88,7 +88,7 @@ paths:
       - $ref: '#/components/parameters/TransactionId'
     post:
       operationId: reverseTransaction
-      description: Planned for Task 5. Flips entries and links the new transaction to the original. Reversals cannot themselves be reversed.
+      description: Flips entries and links the new transaction to the original. Reversals cannot themselves be reversed.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -132,6 +132,7 @@ components:
         balance: {type: string, pattern: '^-?[0-9]+(?:\.[0-9]+)?$'}
     Entry:
       type: object
+      additionalProperties: false
       required: [accountId, direction, amount]
       properties:
         accountId: {type: string, format: uuid}
@@ -157,7 +158,10 @@ components:
             id: {type: string, format: uuid}
             currency: {$ref: '#/components/schemas/Currency'}
             recordedAt: {type: string, format: date-time}
-            reversesId: {type: string, format: uuid}
+            reversesId:
+              anyOf:
+                - {type: string, format: uuid}
+                - {type: 'null'}
     Problem:
       type: object
       required: [status, detail, code, field]
@@ -195,4 +199,3 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Transaction'}
-

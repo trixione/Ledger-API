@@ -19,7 +19,7 @@ import com.example.ledger.LedgerApplication;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @EnabledIfEnvironmentVariable(named = "LEDGER_MYSQL_TEST", matches = "true")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.rabbitmq.listener.simple.auto-startup=false")
 class AccountIntegrationTest {
     @LocalServerPort
     private int port;
@@ -32,7 +32,7 @@ class AccountIntegrationTest {
         var request = open(key, """
                 {"currency":"EUR","overdraftLimit":"25.50"}
                 """);
-        try (var other = new SpringApplicationBuilder(LedgerApplication.class).run("--server.port=0")) {
+        try (var other = new SpringApplicationBuilder(LedgerApplication.class).run("--server.port=0", "--spring.rabbitmq.listener.simple.auto-startup=false")) {
             int otherPort = ((WebServerApplicationContext) other).getWebServer().getPort();
             var retryRequest = open(otherPort, key, """
                     {"currency":"EUR","overdraftLimit":"25.5"}

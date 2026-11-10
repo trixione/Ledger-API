@@ -1,13 +1,13 @@
-package com.example.ledger.v1.model;
+package com.example.ledger.v1.exception;
 
 import org.springframework.http.HttpStatus;
 
-public final class AccountError extends RuntimeException {
+public final class LedgerException extends RuntimeException {
     private final HttpStatus status;
     private final String code;
     private final String field;
 
-    public AccountError(HttpStatus status, String code, String field, String detail) {
+    public LedgerException(HttpStatus status, String code, String field, String detail) {
         super(detail);
         this.status = status;
         this.code = code;
@@ -26,7 +26,7 @@ public final class AccountError extends RuntimeException {
         return field;
     }
 
-    public static AccountError invalid(String field, String code, String detail) {
-        return new AccountError(HttpStatus.BAD_REQUEST, code, field, detail);
+    public static LedgerException invalid(String field, String code, String detail) {
+        return new LedgerException(HttpStatus.BAD_REQUEST, code, field, detail);
     }
 }

@@ -5,15 +5,18 @@ Work through the tasks in order. Each row is one commit. Run its completion chec
 ## Current status
 
 - **Task 1 implemented.** Maven Wrapper build and Spring startup smoke test passed. Full Compose startup and RabbitMQ health still need a Docker run.
-- **Task 2 drafted.** The [REST contract](contracts/openapi.yaml) documents the implemented account endpoints and planned transaction endpoints. The [event schemas](contracts/events.yaml) define the planned RabbitMQ payloads.
+- **Task 2 implemented.** The [REST contract](contracts/openapi.yaml) documents the account, transaction, and reversal endpoints. The [event schemas](contracts/events.yaml) define the incoming payment and outgoing transaction payloads.
 - **Task 3 implemented and tested.** HTTP integration tests against MySQL 8.4 cover account reads, currency validation, settlement seeding, and concurrent retries across two application instances.
-- **Tasks 4–9 are planned.** Task 4 is the next implementation step.
+- **Tasks 4–6 implemented.** The API posts, reads, and reverses transactions. The RabbitMQ listener processes settled payments, and the sample sender publishes to the local broker. Broker-level acknowledgement and dead-letter delivery still need a Compose run.
+- **Tasks 7–9 are planned.** Task 7 is next. Postings already persist outbox rows.
 
 ## Package structure
 
-Keep versioned application code under `com.example.ledger.v1`. Put REST endpoints and HTTP validation in `controller`, business rules and transaction boundaries in `service`, JDBC queries and locking in `repository`, and domain and API data types in `model`. Keep RabbitMQ listeners and publishers in a sibling `v1.messaging` package when Tasks 6–7 add them. Listeners call the same posting service as the REST controller.
+Keep versioned application code under `com.example.ledger.v1`. Put REST endpoints and HTTP validation in `controller`, business rules and transaction boundaries in `service`, JDBC queries and locking in `repository`, and domain and API data types in `model`. Keep RabbitMQ listeners and publishers in a sibling `v1.messaging` package. The payment listener calls the same posting service as the REST controller.
 
 Keep the Spring Boot entry point at `com.example.ledger.LedgerApplication`, Flyway migrations in `src/main/resources/db/migration`, and contracts in `contracts/`. Mirror application package names in integration tests where applicable.
+
+Keep REST exception mapping in `v1.advice`, shared exception types in `v1.exception`, and reusable request and fingerprint helpers in `v1.util`.
 
 ## Tasks
 
